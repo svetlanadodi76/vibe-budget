@@ -139,6 +139,45 @@ export default function DashboardPage() {
           </div>
         </div>
 
+        {/* Navigație rapidă */}
+        <div className="mt-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+          <a href="/dashboard/banks" className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm p-5 flex items-center gap-4 hover:shadow-md transition-all group">
+            <span className="text-3xl">🏦</span>
+            <div>
+              <p className="font-semibold text-gray-900 group-hover:text-teal-700 transition-colors">Bănci</p>
+              <p className="text-sm text-gray-500">Gestionează conturile</p>
+            </div>
+          </a>
+          <a href="/dashboard/categories" className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm p-5 flex items-center gap-4 hover:shadow-md transition-all group">
+            <span className="text-3xl">🗂️</span>
+            <div>
+              <p className="font-semibold text-gray-900 group-hover:text-teal-700 transition-colors">Categorii</p>
+              <p className="text-sm text-gray-500">Venituri și cheltuieli</p>
+            </div>
+          </a>
+          <a href="/dashboard/currencies" className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm p-5 flex items-center gap-4 hover:shadow-md transition-all group">
+            <span className="text-3xl">💱</span>
+            <div>
+              <p className="font-semibold text-gray-900 group-hover:text-teal-700 transition-colors">Valute</p>
+              <p className="text-sm text-gray-500">Gestionează valutele</p>
+            </div>
+          </a>
+          <a href="/dashboard/transactions" className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm p-5 flex items-center gap-4 hover:shadow-md transition-all group">
+            <span className="text-3xl">💳</span>
+            <div>
+              <p className="font-semibold text-gray-900 group-hover:text-teal-700 transition-colors">Tranzacții</p>
+              <p className="text-sm text-gray-500">Vezi toate tranzacțiile</p>
+            </div>
+          </a>
+          <a href="/dashboard/upload" className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm p-5 flex items-center gap-4 hover:shadow-md transition-all group">
+            <span className="text-3xl">📂</span>
+            <div>
+              <p className="font-semibold text-gray-900 group-hover:text-teal-700 transition-colors">Import</p>
+              <p className="text-sm text-gray-500">CSV / Excel</p>
+            </div>
+          </a>
+        </div>
+
         {/* Empty state */}
         {!statsLoading && stats?.totalBalance === 0 && stats?.incomeThisMonth === 0 && (
           <div className="mt-10 bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-8 text-center">
