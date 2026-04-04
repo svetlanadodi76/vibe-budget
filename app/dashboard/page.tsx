@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/hooks/useAuth";
-import { toast } from "sonner";
 
 interface DashboardStats {
   totalBalance: number;
@@ -19,34 +18,61 @@ function formatAmount(amount: number): string {
   }).format(amount);
 }
 
+function toMonthValue(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+const MONTHS = (() => {
+  const result = [];
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    result.push({
+      value: toMonthValue(d),
+      label: d.toLocaleString("ro-RO", { month: "long", year: "numeric" }),
+    });
+  }
+  return result;
+})();
+
 export default function DashboardPage() {
   const router = useRouter();
   const { user, loading, supabase } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [statsLoading, setStatsLoading] = useState(true);
+  const [selectedMonth, setSelectedMonth] = useState(toMonthValue(new Date()));
 
   useEffect(() => {
-    if (!user) return;
-
-    const fetchStats = async () => {
-      try {
-        const res = await fetch("/api/dashboard/stats");
-        if (!res.ok) throw new Error("Failed to fetch stats");
-        const data = await res.json();
+    if (!user?.id) return;
+    setStatsLoading(true);
+    const controller = new AbortController();
+    fetch(`/api/dashboard/stats?month=${selectedMonth}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then((res) => res.json())
+      .then((data) => {
         setStats(data);
-      } catch (err) {
-        toast.error("Nu s-au putut încărca datele financiare.");
-      } finally {
         setStatsLoading(false);
-      }
-    };
-
-    fetchStats();
-  }, [user]);
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") setStatsLoading(false);
+      });
+    return () => controller.abort();
+  }, [user?.id, selectedMonth]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
+  };
+
+  const currentIndex = MONTHS.findIndex((m) => m.value === selectedMonth);
+
+  const goToPrev = () => {
+    if (currentIndex < MONTHS.length - 1) setSelectedMonth(MONTHS[currentIndex + 1].value);
+  };
+  const goToNext = () => {
+    if (currentIndex > 0) setSelectedMonth(MONTHS[currentIndex - 1].value);
   };
 
   if (loading) {
@@ -79,11 +105,34 @@ export default function DashboardPage() {
 
       {/* Content */}
       <main className="max-w-5xl mx-auto px-6 py-10">
-        <div className="mb-8">
+        <div className="mb-8 flex items-center justify-between flex-wrap gap-4">
           <h2 className="text-2xl font-bold text-gray-900">Rezumat financiar</h2>
-          <p className="text-gray-600 mt-1">
-            {new Date().toLocaleString("ro-RO", { month: "long", year: "numeric" })}
-          </p>
+          {/* Selector lună */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={goToPrev}
+              disabled={currentIndex >= MONTHS.length - 1}
+              className="w-8 h-8 rounded-lg bg-white/80 border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all font-medium text-gray-600"
+            >
+              ‹
+            </button>
+            <select
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="border border-gray-200 rounded-lg px-3 py-1.5 bg-white/80 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-teal-500"
+            >
+              {MONTHS.map((m) => (
+                <option key={m.value} value={m.value}>{m.label}</option>
+              ))}
+            </select>
+            <button
+              onClick={goToNext}
+              disabled={currentIndex <= 0}
+              className="w-8 h-8 rounded-lg bg-white/80 border border-gray-200 hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed transition-all font-medium text-gray-600"
+            >
+              ›
+            </button>
+          </div>
         </div>
 
         {/* Cards */}
@@ -98,41 +147,41 @@ export default function DashboardPage() {
               <div className="h-8 bg-gray-100 rounded animate-pulse" />
             ) : (
               <p className={`text-3xl font-bold ${stats && stats.totalBalance >= 0 ? "text-teal-600" : "text-red-600"}`}>
-                {formatAmount(stats?.totalBalance ?? 0)} {stats?.currency ?? "RON"}
+                {formatAmount(stats?.totalBalance ?? 0)} {stats?.currency ?? "MDL"}
               </p>
             )}
             <p className="text-xs text-gray-500 mt-2">Toate tranzacțiile</p>
           </div>
 
-          {/* Card 2: Venituri luna asta */}
+          {/* Card 2: Venituri */}
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6">
             <div className="flex items-center gap-3 mb-4">
               <span className="text-3xl">📈</span>
-              <p className="text-sm font-medium text-gray-600">Venituri luna asta</p>
+              <p className="text-sm font-medium text-gray-600">Venituri</p>
             </div>
             {statsLoading ? (
               <div className="h-8 bg-gray-100 rounded animate-pulse" />
             ) : (
               <p className="text-3xl font-bold">
                 <span style={{ color: "#16a34a" }}>+{formatAmount(stats?.incomeThisMonth ?? 0)}</span>{" "}
-                {stats?.currency ?? "RON"}
+                {stats?.currency ?? "MDL"}
               </p>
             )}
             <p className="text-xs text-gray-500 mt-2">Intrări de bani</p>
           </div>
 
-          {/* Card 3: Cheltuieli luna asta */}
+          {/* Card 3: Cheltuieli */}
           <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-6">
             <div className="flex items-center gap-3 mb-4">
               <span className="text-3xl">📉</span>
-              <p className="text-sm font-medium text-gray-600">Cheltuieli luna asta</p>
+              <p className="text-sm font-medium text-gray-600">Cheltuieli</p>
             </div>
             {statsLoading ? (
               <div className="h-8 bg-gray-100 rounded animate-pulse" />
             ) : (
               <p className="text-3xl font-bold">
                 <span style={{ color: "#dc2626" }}>-{formatAmount(stats?.expensesThisMonth ?? 0)}</span>{" "}
-                {stats?.currency ?? "RON"}
+                {stats?.currency ?? "MDL"}
               </p>
             )}
             <p className="text-xs text-gray-500 mt-2">Ieșiri de bani</p>
