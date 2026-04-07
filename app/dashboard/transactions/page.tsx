@@ -60,6 +60,16 @@ export default function TransactionsPage() {
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
 
+  // Editare
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDate, setEditDate] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editCurrency, setEditCurrency] = useState("MDL");
+  const [editBankId, setEditBankId] = useState("");
+  const [editCategoryId, setEditCategoryId] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
+
   // Formular adăugare
   const [showForm, setShowForm] = useState(false);
   const [newDate, setNewDate] = useState(new Date().toISOString().slice(0, 10));
@@ -162,6 +172,45 @@ export default function TransactionsPage() {
     }
   };
 
+  const startEdit = (tx: Transaction) => {
+    setEditingId(tx.id);
+    setEditDate(tx.date);
+    setEditDescription(tx.description);
+    setEditAmount(String(tx.amount));
+    setEditCurrency(tx.currency);
+    setEditBankId(tx.bankId ?? "");
+    setEditCategoryId(tx.categoryId ?? "");
+  };
+
+  const handleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingId) return;
+    setEditSaving(true);
+    try {
+      const res = await fetch(`/api/transactions/${editingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: editDate,
+          description: editDescription,
+          amount: parseFloat(editAmount),
+          currency: editCurrency,
+          bankId: editBankId || null,
+          categoryId: editCategoryId || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error); return; }
+      toast.success("Tranzacție actualizată!");
+      setEditingId(null);
+      fetchTransactions();
+    } catch {
+      toast.error("Eroare la editare.");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
   const clearFilters = () => {
     setSearch("");
     setFilterBank("");
@@ -204,6 +253,100 @@ export default function TransactionsPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8">
+
+        {/* Modal editare */}
+        {editingId && (
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <form onSubmit={handleEdit} className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Editează tranzacția</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Dată</label>
+                  <input
+                    type="date"
+                    value={editDate}
+                    onChange={(e) => setEditDate(e.target.value)}
+                    required
+                    className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Sumă</label>
+                  <input
+                    type="number"
+                    value={editAmount}
+                    onChange={(e) => setEditAmount(e.target.value)}
+                    step="0.01"
+                    required
+                    className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Descriere</label>
+                  <input
+                    type="text"
+                    value={editDescription}
+                    onChange={(e) => setEditDescription(e.target.value)}
+                    required
+                    className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Valută</label>
+                  <input
+                    type="text"
+                    value={editCurrency}
+                    onChange={(e) => setEditCurrency(e.target.value.toUpperCase())}
+                    maxLength={5}
+                    className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-teal-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Bancă</label>
+                  <select
+                    value={editBankId}
+                    onChange={(e) => setEditBankId(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                  >
+                    <option value="">— Fără bancă —</option>
+                    {banks.map((b) => (
+                      <option key={b.id} value={b.id}>{b.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Categorie</label>
+                  <select
+                    value={editCategoryId}
+                    onChange={(e) => setEditCategoryId(e.target.value)}
+                    className="border border-gray-300 rounded-lg px-3 py-2 w-full focus:outline-none focus:ring-2 focus:ring-teal-500 bg-white"
+                  >
+                    <option value="">— Fără categorie —</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>{c.icon} {c.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <div className="flex gap-3 mt-5">
+                <button
+                  type="submit"
+                  disabled={editSaving}
+                  className="bg-teal-600 hover:bg-teal-700 active:scale-95 text-white font-medium px-5 py-2 rounded-lg transition-all disabled:opacity-60"
+                >
+                  {editSaving ? "Se salvează..." : "Salvează"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditingId(null)}
+                  className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-5 py-2 rounded-lg transition-all"
+                >
+                  Anulează
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
 
         {/* Formular adăugare */}
         {showForm && (
@@ -418,12 +561,20 @@ export default function TransactionsPage() {
                       )}
                     </td>
                     <td className="px-5 py-3 text-right">
-                      <button
-                        onClick={() => handleDelete(tx.id)}
-                        className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-all"
-                      >
-                        🗑️
-                      </button>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => startEdit(tx)}
+                          className="text-xs text-gray-400 hover:text-teal-600 px-2 py-1 rounded hover:bg-teal-50 transition-all"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          onClick={() => handleDelete(tx.id)}
+                          className="text-xs text-red-400 hover:text-red-600 px-2 py-1 rounded hover:bg-red-50 transition-all"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

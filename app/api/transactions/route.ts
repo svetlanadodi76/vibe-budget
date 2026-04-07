@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth/get-current-user";
 import { db } from "@/lib/db";
 import * as schema from "@/lib/db/schema";
 import { eq, and, gte, lte, ilike, SQL } from "drizzle-orm";
+import { autoCategorizare } from "@/lib/auto-categorization";
 
 export async function GET(request: NextRequest) {
   try {
@@ -63,7 +64,59 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { date, description, amount, currency, bankId, categoryId } = await request.json();
+    const body = await request.json();
+
+    // Mod bulk: body conține { transactions: [...] }
+    if (Array.isArray(body.transactions)) {
+      const { transactions, bankId } = body;
+
+      if (transactions.length === 0) {
+        return NextResponse.json({ error: "Lista de tranzacții este goală" }, { status: 400 });
+      }
+
+      // Încarcă keywords o singură dată pentru eficiență
+      const keywords = await db
+        .select({
+          keyword: schema.userKeywords.keyword,
+          categoryId: schema.userKeywords.categoryId,
+        })
+        .from(schema.userKeywords)
+        .where(eq(schema.userKeywords.userId, user.id));
+
+      // Pregătim valorile cu auto-categorization
+      const values = transactions.map((t: {
+        date: string;
+        description: string;
+        amount: number;
+        currency?: string;
+        bankId?: string;
+      }) => {
+        const categoryId = autoCategorizare(t.description, keywords);
+        return {
+          userId: user.id,
+          date: t.date,
+          description: t.description,
+          amount: t.amount,
+          currency: t.currency ?? "MDL",
+          bankId: t.bankId || bankId || null,
+          categoryId,
+        };
+      });
+
+      // Insert bulk
+      await db.insert(schema.transactions).values(values);
+
+      const categorized = values.filter((v: { categoryId: string | null }) => v.categoryId !== null).length;
+
+      return NextResponse.json({
+        message: "Import reușit",
+        imported: values.length,
+        categorized,
+      });
+    }
+
+    // Mod singulă: comportament existent (folosit de formularul manual)
+    const { date, description, amount, currency, bankId, categoryId } = body;
 
     if (!date || !description || amount === undefined) {
       return NextResponse.json({ error: "Data, descrierea și suma sunt obligatorii" }, { status: 400 });
