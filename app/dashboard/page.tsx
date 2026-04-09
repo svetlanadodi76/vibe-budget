@@ -225,6 +225,13 @@ export default function DashboardPage() {
               <p className="text-sm text-gray-500">CSV / Excel</p>
             </div>
           </a>
+          <a href="/dashboard/reports" className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm p-5 flex items-center gap-4 hover:shadow-md transition-all group">
+            <span className="text-3xl">📊</span>
+            <div>
+              <p className="font-semibold text-gray-900 group-hover:text-teal-700 transition-colors">Rapoarte</p>
+              <p className="text-sm text-gray-500">Grafice și statistici</p>
+            </div>
+          </a>
         </div>
 
         {/* Empty state */}
