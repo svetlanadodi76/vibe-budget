@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { getAllCategories } from "@/lib/auto-categorization/categories-rules";
 
 interface Category {
   id: string;
@@ -11,6 +12,12 @@ interface Category {
   color: string;
   icon: string;
   isSystemCategory: boolean;
+}
+
+interface Keyword {
+  id: string;
+  keyword: string;
+  categoryId: string;
 }
 
 const ICONS = ["🍔", "🚗", "🏠", "💰", "🎮", "📱", "✈️", "🎵", "💊", "🛍️", "📚", "☕", "🏥", "💻", "🎁", "🐶", "⚽", "🧾", "💵", "📺", "🔄", "💸", "📥", "🍽️"];
@@ -43,6 +50,12 @@ export default function CategoriesPage() {
 
   const [saving, setSaving] = useState(false);
 
+  // Keywords
+  const [expandedCategoryId, setExpandedCategoryId] = useState<string | null>(null);
+  const [keywordsMap, setKeywordsMap] = useState<Record<string, Keyword[]>>({});
+  const [newKeyword, setNewKeyword] = useState("");
+  const [keywordSaving, setKeywordSaving] = useState(false);
+
   useEffect(() => {
     if (!user) return;
     fetchCategories();
@@ -52,11 +65,118 @@ export default function CategoriesPage() {
     try {
       const res = await fetch("/api/categories");
       const data = await res.json();
-      setCategories(data.categories ?? []);
+      const existing: Category[] = data.categories ?? [];
+
+      if (existing.length === 0) {
+        await seedDefaultCategories();
+        const res2 = await fetch("/api/categories");
+        const data2 = await res2.json();
+        setCategories(data2.categories ?? []);
+      } else {
+        setCategories(existing);
+      }
     } catch {
       toast.error("Nu s-au putut încărca categoriile.");
     } finally {
       setCategoriesLoading(false);
+    }
+  };
+
+  const seedDefaultCategories = async () => {
+    const defaultCategories = getAllCategories();
+
+    // Creează categoriile și colectează ID-urile
+    const created = await Promise.all(
+      defaultCategories.map((cat) =>
+        fetch("/api/categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: cat.name,
+            type: cat.type,
+            icon: cat.icon,
+            color: cat.color,
+            isSystemCategory: true,
+          }),
+        }).then((r) => r.json())
+      )
+    );
+
+    // Adaugă keywords pentru fiecare categorie creată
+    await Promise.all(
+      created.flatMap((data, i) => {
+        const categoryId = data.category?.id;
+        if (!categoryId) return [];
+        return defaultCategories[i].keywords.map((keyword) =>
+          fetch("/api/keywords", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ keyword, categoryId }),
+          })
+        );
+      })
+    );
+
+    toast.success("Categorii și keywords predefinite create!");
+  };
+
+  const fetchKeywords = async (categoryId: string) => {
+    try {
+      const res = await fetch(`/api/keywords?categoryId=${categoryId}`);
+      const data = await res.json();
+      setKeywordsMap((prev) => ({ ...prev, [categoryId]: data.keywords ?? [] }));
+    } catch {
+      toast.error("Nu s-au putut încărca keywords.");
+    }
+  };
+
+  const toggleKeywords = (categoryId: string) => {
+    if (expandedCategoryId === categoryId) {
+      setExpandedCategoryId(null);
+      setNewKeyword("");
+    } else {
+      setExpandedCategoryId(categoryId);
+      setNewKeyword("");
+      if (!keywordsMap[categoryId]) {
+        fetchKeywords(categoryId);
+      }
+    }
+  };
+
+  const handleAddKeyword = async (categoryId: string) => {
+    if (!newKeyword.trim()) return;
+    setKeywordSaving(true);
+    try {
+      const res = await fetch("/api/keywords", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ keyword: newKeyword.trim(), categoryId }),
+      });
+      const data = await res.json();
+      if (!res.ok) { toast.error(data.error); return; }
+      setKeywordsMap((prev) => ({
+        ...prev,
+        [categoryId]: [...(prev[categoryId] ?? []), data.keyword],
+      }));
+      setNewKeyword("");
+      toast.success("Keyword adăugat!");
+    } catch {
+      toast.error("Eroare la adăugare keyword.");
+    } finally {
+      setKeywordSaving(false);
+    }
+  };
+
+  const handleDeleteKeyword = async (keywordId: string, categoryId: string) => {
+    try {
+      const res = await fetch(`/api/keywords/${keywordId}`, { method: "DELETE" });
+      if (!res.ok) { toast.error("Eroare la ștergere."); return; }
+      setKeywordsMap((prev) => ({
+        ...prev,
+        [categoryId]: (prev[categoryId] ?? []).filter((k) => k.id !== keywordId),
+      }));
+    } catch {
+      toast.error("Eroare la ștergere keyword.");
     }
   };
 
@@ -125,6 +245,7 @@ export default function CategoriesPage() {
     setEditColor(cat.color);
     setEditIcon(cat.icon);
     setShowAddForm(null);
+    setExpandedCategoryId(null);
   };
 
   const openAddForm = (type: "income" | "expense") => {
@@ -173,104 +294,173 @@ export default function CategoriesPage() {
             </thead>
             <tbody>
               {list.map((cat) => (
-                editId === cat.id ? (
-                  <tr key={cat.id}>
-                    <td colSpan={4} className="px-4 py-3">
-                      <form onSubmit={handleEdit} className="flex flex-wrap gap-2 items-center">
-                        <div className="flex flex-wrap gap-1">
-                          {ICONS.map((ic) => (
-                            <button
-                              key={ic}
-                              type="button"
-                              onClick={() => setEditIcon(ic)}
-                              className={`w-8 h-8 rounded-lg text-base transition-all hover:scale-110 ${editIcon === ic ? "bg-teal-100 ring-2 ring-teal-500" : "hover:bg-gray-100"}`}
-                            >
-                              {ic}
-                            </button>
-                          ))}
+                <>
+                  {editId === cat.id ? (
+                    <tr key={cat.id}>
+                      <td colSpan={4} className="px-4 py-3">
+                        <form onSubmit={handleEdit} className="flex flex-wrap gap-2 items-center">
+                          <div className="flex flex-wrap gap-1">
+                            {ICONS.map((ic) => (
+                              <button
+                                key={ic}
+                                type="button"
+                                onClick={() => setEditIcon(ic)}
+                                className={`w-8 h-8 rounded-lg text-base transition-all hover:scale-110 ${editIcon === ic ? "bg-teal-100 ring-2 ring-teal-500" : "hover:bg-gray-100"}`}
+                              >
+                                {ic}
+                              </button>
+                            ))}
+                          </div>
+                          <input
+                            type="text"
+                            value={editName}
+                            onChange={(e) => setEditName(e.target.value)}
+                            required
+                            className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 min-w-[120px] focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
+                          />
+                          <div className="flex gap-2">
+                            {COLORS.map((c) => (
+                              <button
+                                key={c.value}
+                                type="button"
+                                onClick={() => setEditColor(c.value)}
+                                title={c.label}
+                                className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110"
+                                style={{
+                                  backgroundColor: c.value,
+                                  borderColor: editColor === c.value ? "#111827" : "transparent",
+                                }}
+                              />
+                            ))}
+                          </div>
+                          <button
+                            type="submit"
+                            disabled={saving}
+                            className="bg-teal-600 hover:bg-teal-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm disabled:opacity-60"
+                          >
+                            {saving ? "..." : "Salvează"}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditId(null)}
+                            className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-3 py-1.5 rounded-lg text-sm"
+                          >
+                            Anulează
+                          </button>
+                        </form>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={cat.id} className="border-t border-gray-50 hover:bg-gray-50/50 transition-colors">
+                      <td className="px-4 py-3 text-xl">{cat.icon}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
+                          <span className="font-medium text-gray-900 text-sm">{cat.name}</span>
                         </div>
-                        <input
-                          type="text"
-                          value={editName}
-                          onChange={(e) => setEditName(e.target.value)}
-                          required
-                          className="border border-gray-300 rounded-lg px-3 py-1.5 flex-1 min-w-[120px] focus:outline-none focus:ring-2 focus:ring-teal-500 text-sm"
-                        />
-                        <div className="flex gap-2">
-                          {COLORS.map((c) => (
-                            <button
-                              key={c.value}
-                              type="button"
-                              onClick={() => setEditColor(c.value)}
-                              title={c.label}
-                              className="w-6 h-6 rounded-full border-2 transition-transform hover:scale-110"
-                              style={{
-                                backgroundColor: c.value,
-                                borderColor: editColor === c.value ? "#111827" : "transparent",
-                              }}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                          cat.isSystemCategory
+                            ? "bg-gray-100 text-gray-500"
+                            : "bg-teal-50 text-teal-700"
+                        }`}>
+                          {cat.isSystemCategory ? "sistem" : "personal"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1 justify-end">
+                          <button
+                            onClick={() => toggleKeywords(cat.id)}
+                            className={`text-xs font-medium px-2.5 py-1 rounded-lg transition-all ${
+                              expandedCategoryId === cat.id
+                                ? "bg-orange-100 text-orange-700"
+                                : "text-gray-500 hover:text-orange-600 hover:bg-orange-50"
+                            }`}
+                          >
+                            🏷️ Keywords
+                          </button>
+                          <button
+                            onClick={() => startEdit(cat)}
+                            className="text-xs text-teal-600 hover:text-teal-800 font-medium px-2.5 py-1 rounded-lg hover:bg-teal-50 transition-all"
+                          >
+                            ✏️ Editează
+                          </button>
+                          <button
+                            onClick={() => handleDelete(cat.id, cat.name)}
+                            className="text-xs text-red-500 hover:text-red-700 font-medium px-2.5 py-1 rounded-lg hover:bg-red-50 transition-all"
+                          >
+                            🗑️ Șterge
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+
+                  {/* Secțiunea keywords expandabilă */}
+                  {expandedCategoryId === cat.id && (
+                    <tr key={`${cat.id}-keywords`}>
+                      <td colSpan={4} className="px-4 py-3 bg-orange-50/60 border-t border-orange-100">
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-orange-700 uppercase tracking-wide">
+                            Keywords pentru „{cat.name}"
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            Dacă descrierea unei tranzacții conține unul din aceste cuvinte, va fi asignată automat la această categorie.
+                          </p>
+
+                          {/* Lista keywords existente */}
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {(keywordsMap[cat.id] ?? []).length === 0 ? (
+                              <span className="text-xs text-gray-400 italic">Niciun keyword încă.</span>
+                            ) : (
+                              (keywordsMap[cat.id] ?? []).map((kw) => (
+                                <span
+                                  key={kw.id}
+                                  className="inline-flex items-center gap-1 bg-white border border-orange-200 text-orange-800 text-xs font-medium px-2.5 py-1 rounded-full"
+                                >
+                                  {kw.keyword}
+                                  <button
+                                    onClick={() => handleDeleteKeyword(kw.id, cat.id)}
+                                    className="hover:text-red-500 transition-colors ml-0.5"
+                                  >
+                                    ✕
+                                  </button>
+                                </span>
+                              ))
+                            )}
+                          </div>
+
+                          {/* Input adăugare keyword nou */}
+                          <div className="flex gap-2 mt-2">
+                            <input
+                              type="text"
+                              value={newKeyword}
+                              onChange={(e) => setNewKeyword(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleAddKeyword(cat.id); } }}
+                              placeholder="ex: mega image, netflix, uber..."
+                              className="border border-gray-300 rounded-lg px-3 py-1.5 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-orange-400 bg-white"
                             />
-                          ))}
+                            <button
+                              onClick={() => handleAddKeyword(cat.id)}
+                              disabled={keywordSaving || !newKeyword.trim()}
+                              className="bg-orange-500 hover:bg-orange-600 active:scale-95 text-white text-sm font-medium px-4 py-1.5 rounded-lg transition-all disabled:opacity-40"
+                            >
+                              {keywordSaving ? "..." : "+ Adaugă"}
+                            </button>
+                          </div>
                         </div>
-                        <button
-                          type="submit"
-                          disabled={saving}
-                          className="bg-teal-600 hover:bg-teal-700 text-white font-medium px-3 py-1.5 rounded-lg text-sm disabled:opacity-60"
-                        >
-                          {saving ? "..." : "Salvează"}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditId(null)}
-                          className="bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-3 py-1.5 rounded-lg text-sm"
-                        >
-                          Anulează
-                        </button>
-                      </form>
-                    </td>
-                  </tr>
-                ) : (
-                  <tr key={cat.id} className="border-t border-gray-50 hover:bg-gray-50/50 transition-colors">
-                    <td className="px-4 py-3 text-xl">{cat.icon}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: cat.color }} />
-                        <span className="font-medium text-gray-900 text-sm">{cat.name}</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        cat.isSystemCategory
-                          ? "bg-gray-100 text-gray-500"
-                          : "bg-teal-50 text-teal-700"
-                      }`}>
-                        {cat.isSystemCategory ? "sistem" : "personal"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex gap-1 justify-end">
-                        <button
-                          onClick={() => startEdit(cat)}
-                          className="text-xs text-teal-600 hover:text-teal-800 font-medium px-2.5 py-1 rounded-lg hover:bg-teal-50 transition-all"
-                        >
-                          ✏️ Editează
-                        </button>
-                        <button
-                          onClick={() => handleDelete(cat.id, cat.name)}
-                          className="text-xs text-red-500 hover:text-red-700 font-medium px-2.5 py-1 rounded-lg hover:bg-red-50 transition-all"
-                        >
-                          🗑️ Șterge
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>
         )}
       </div>
 
-      {/* Formular adăugare */}
+      {/* Formular adăugare categorie */}
       {showAddForm === type && (
         <form onSubmit={handleAdd} className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 mb-3">
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Categorie nouă</h3>

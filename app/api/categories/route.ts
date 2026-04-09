@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { name, type, color, icon } = await request.json();
+    const { name, type, color, icon, isSystemCategory } = await request.json();
 
     if (!name) {
       return NextResponse.json({ error: "Numele categoriei este obligatoriu" }, { status: 400 });
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
         type,
         color: color ?? "#6366f1",
         icon: icon ?? "📁",
-        isSystemCategory: false,
+        isSystemCategory: isSystemCategory === true,
       })
       .returning();
 

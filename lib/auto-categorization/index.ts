@@ -28,8 +28,13 @@ export function autoCategorizare(
 ): string | null {
   const desc = description.toLowerCase();
   for (const kw of keywords) {
-    if (desc.includes(kw.keyword.toLowerCase())) {
-      return kw.categoryId;
+    // Suportă atât keyword simplu cât și listă separată prin virgulă
+    // ex: "farmacie, sport, antrenament" → ["farmacie", "sport", "antrenament"]
+    const terms = kw.keyword.split(",").map((t) => t.trim()).filter(Boolean);
+    for (const term of terms) {
+      if (term && desc.includes(term.toLowerCase())) {
+        return kw.categoryId;
+      }
     }
   }
   return null;
