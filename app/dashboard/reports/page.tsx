@@ -20,6 +20,13 @@ interface BarEntry {
   Cheltuieli: number;
 }
 
+interface CoachResult {
+  healthScore: number;
+  healthExplanation: string;
+  tips: string[];
+  positiveObservation: string;
+}
+
 const PERIODS = [
   { value: "current-month", label: "Luna curentă" },
   { value: "prev-month", label: "Luna precedentă" },
@@ -38,10 +45,15 @@ export default function ReportsPage() {
   const [pieData, setPieData] = useState<PieEntry[]>([]);
   const [barData, setBarData] = useState<BarEntry[]>([]);
   const [dataLoading, setDataLoading] = useState(true);
+  const [coachResult, setCoachResult] = useState<CoachResult | null>(null);
+  const [coachLoading, setCoachLoading] = useState(false);
+  const [coachError, setCoachError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     setDataLoading(true);
+    setCoachResult(null);
+    setCoachError(null);
     fetch(`/api/reports?period=${period}`)
       .then((r) => r.json())
       .then((d) => {
@@ -53,6 +65,53 @@ export default function ReportsPage() {
 
   const totalExpenses = pieData.reduce((sum, d) => sum + d.value, 0);
   const totalIncome = barData.reduce((sum, d) => sum + d.Venituri, 0);
+
+  const handleAnalyze = async () => {
+    setCoachLoading(true);
+    setCoachError(null);
+    setCoachResult(null);
+
+    const periodLabel = PERIODS.find((p) => p.value === period)?.label ?? period;
+
+    const categories = pieData.map((entry) => ({
+      name: entry.name as string,
+      total: entry.value as number,
+      percentage: totalExpenses > 0 ? ((entry.value as number) / totalExpenses) * 100 : 0,
+    }));
+
+    const months = barData.map((entry) => ({
+      month: entry.month,
+      income: entry.Venituri,
+      expenses: entry.Cheltuieli,
+    }));
+
+    try {
+      const res = await fetch("/api/ai/coach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          period: periodLabel,
+          totalIncome,
+          totalExpenses,
+          balance: totalIncome - totalExpenses,
+          categories,
+          months,
+        }),
+      });
+
+      if (!res.ok) {
+        setCoachError("Eroare la analiza AI. Încearcă din nou.");
+        return;
+      }
+
+      const data = await res.json() as CoachResult;
+      setCoachResult(data);
+    } catch {
+      setCoachError("Eroare de conexiune. Încearcă din nou.");
+    } finally {
+      setCoachLoading(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -207,6 +266,98 @@ export default function ReportsPage() {
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+              )}
+            </div>
+
+            {/* AI Financial Coach */}
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl shadow-sm p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">🤖 AI Financial Coach</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">Analiză personalizată a cheltuielilor tale</p>
+                </div>
+                <button
+                  onClick={handleAnalyze}
+                  disabled={coachLoading || pieData.length === 0 && barData.length === 0}
+                  className="px-5 py-2.5 bg-teal-600 text-white text-sm font-medium rounded-xl hover:bg-teal-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {coachLoading ? (
+                    <>
+                      <span className="inline-block w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Analizez...
+                    </>
+                  ) : (
+                    "✨ Analizează cheltuielile"
+                  )}
+                </button>
+              </div>
+
+              {coachError && (
+                <p className="text-sm" style={{ color: "#dc2626" }}>{coachError}</p>
+              )}
+
+              {coachResult && (
+                <div className="space-y-5 mt-2">
+                  {/* Health Score */}
+                  <div className="flex items-start gap-4">
+                    <div
+                      className="w-20 h-20 rounded-2xl flex flex-col items-center justify-center flex-shrink-0"
+                      style={{
+                        backgroundColor:
+                          coachResult.healthScore >= 80 ? "#dcfce7" :
+                          coachResult.healthScore >= 60 ? "#fef9c3" :
+                          coachResult.healthScore >= 40 ? "#ffedd5" : "#fee2e2",
+                      }}
+                    >
+                      <span
+                        className="text-3xl font-bold"
+                        style={{
+                          color:
+                            coachResult.healthScore >= 80 ? "#16a34a" :
+                            coachResult.healthScore >= 60 ? "#ca8a04" :
+                            coachResult.healthScore >= 40 ? "#ea580c" : "#dc2626",
+                        }}
+                      >
+                        {coachResult.healthScore}
+                      </span>
+                      <span className="text-xs text-gray-500 mt-0.5">/ 100</span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-gray-800 mb-1">Scor de sănătate financiară</p>
+                      <p className="text-sm text-gray-600">{coachResult.healthExplanation}</p>
+                    </div>
+                  </div>
+
+                  {/* Observație pozitivă */}
+                  <div className="bg-green-50 rounded-xl px-4 py-3 flex items-start gap-2">
+                    <span className="text-lg flex-shrink-0">✅</span>
+                    <p className="text-sm text-gray-700">{coachResult.positiveObservation}</p>
+                  </div>
+
+                  {/* Sfaturi */}
+                  <div>
+                    <p className="text-sm font-semibold text-gray-800 mb-2">💡 Sfaturi personalizate</p>
+                    <ul className="space-y-2">
+                      {coachResult.tips.map((tip, i) => (
+                        <li key={i} className="flex items-start gap-2">
+                          <span
+                            className="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5"
+                            style={{ backgroundColor: "#ccfbf1", color: "#0d9488" }}
+                          >
+                            {i + 1}
+                          </span>
+                          <p className="text-sm text-gray-700">{tip}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {!coachResult && !coachLoading && !coachError && (
+                <p className="text-sm text-gray-400 text-center py-4">
+                  Apasă butonul pentru a obține o analiză personalizată bazată pe datele tale reale.
+                </p>
               )}
             </div>
 
