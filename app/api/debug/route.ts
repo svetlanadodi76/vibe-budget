@@ -1,30 +1,37 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { db, schema } from "@/lib/db";
+import { eq } from "drizzle-orm";
 
 export async function GET(request: NextRequest) {
-  const allCookies = request.cookies.getAll();
-  const cookieNames = allCookies.map((c) => c.name);
-
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        getAll() {
-          return request.cookies.getAll();
-        },
+        getAll() { return request.cookies.getAll(); },
         setAll() {},
       },
     }
   );
 
-  const { data: { user }, error } = await supabase.auth.getUser();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  let dbResult = null;
+  let dbError = null;
+
+  try {
+    const count = await db.select().from(schema.transactions)
+      .where(eq(schema.transactions.userId, user?.id ?? ""));
+    dbResult = `${count.length} tranzactii`;
+  } catch (e: unknown) {
+    dbError = e instanceof Error ? e.message : String(e);
+  }
 
   return NextResponse.json({
-    cookieCount: allCookies.length,
-    cookieNames,
     userId: user?.id ?? null,
-    userEmail: user?.email ?? null,
-    authError: error?.message ?? null,
+    dbResult,
+    dbError,
+    databaseUrl: process.env.DATABASE_URL?.replace(/:([^:@]+)@/, ":***@"),
   });
 }
