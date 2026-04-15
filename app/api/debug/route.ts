@@ -25,7 +25,15 @@ export async function GET(request: NextRequest) {
       .where(eq(schema.transactions.userId, user?.id ?? ""));
     dbResult = `${count.length} tranzactii`;
   } catch (e: unknown) {
-    dbError = e instanceof Error ? e.message : String(e);
+    if (e instanceof Error) {
+      dbError = e.message;
+      const cause = (e as { cause?: unknown }).cause;
+      if (cause instanceof Error) {
+        dbError += " | CAUSE: " + cause.message;
+      }
+    } else {
+      dbError = String(e);
+    }
   }
 
   return NextResponse.json({
