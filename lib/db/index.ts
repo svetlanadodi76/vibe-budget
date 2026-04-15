@@ -26,7 +26,9 @@ import * as schema from "./schema";
  * - Port 6543 (pooler) în loc de 5432 (direct)
  * - Host: aws-X-region.pooler.supabase.com (NU db.*.supabase.co)
  */
-const connectionString = process.env.DATABASE_URL!;
+// Supabase Vercel integration sets POSTGRES_URL_NON_POOLING (direct connection)
+// Fall back to DATABASE_URL for local development
+const connectionString = process.env.POSTGRES_URL_NON_POOLING || process.env.DATABASE_URL!;
 
 /**
  * PASUL 2: Configurăm client-ul PostgreSQL
